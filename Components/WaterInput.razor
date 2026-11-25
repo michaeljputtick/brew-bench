@@ -1,0 +1,15 @@
+@if (Profile is not null)
+{
+    <div class="water-input">
+        <div><label>Ca²⁺</label> <input type="number" step="1" @bind="Profile.Calcium" @bind:event="oninput" /> ppm</div>
+        <div><label>Mg²⁺</label> <input type="number" step="1" @bind="Profile.Magnesium" @bind:event="oninput" /> ppm</div>
+        <div><label>Na⁺</label> <input type="number" step="1" @bind="Profile.Sodium" @bind:event="oninput" /> ppm</div>
+        <div><label>SO₄²⁻</label> <input type="number" step="1" @bind="Profile.Sulfate" @bind:event="oninput" /> ppm</div>
+        <div><label>Cl⁻</label> <input type="number" step="1" @bind="Profile.Chloride" @bind:event="oninput" /> ppm</div>
+        <div><label>HCO₃⁻</label> <input type="number" step="1" @bind="Profile.Bicarbonate" @bind:event="oninput" /> ppm</div>
+    </div>
+}
+
+@code {
+    [Parameter] public WaterProfile? Profile { get; set; }
+}

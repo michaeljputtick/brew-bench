@@ -1,0 +1,42 @@
+@page "/styles"
+@inject StyleCatalog Cat
+
+<h1>BJCP Style Reference</h1>
+
+<input class="search-input" @bind="filter" @bind:event="oninput" placeholder="Filter by name or number..." />
+
+<table class="styles-table">
+    <thead>
+        <tr>
+            <th>Cat</th><th>Style</th><th>OG</th><th>FG</th><th>ABV</th><th>IBU</th><th>SRM</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var s in Filtered())
+        {
+            <tr>
+                <td>@s.Number</td>
+                <td><strong>@s.Name</strong><div class="small muted">@s.Category</div></td>
+                <td>@s.Og.Min.ToString("F3")–@s.Og.Max.ToString("F3")</td>
+                <td>@s.Fg.Min.ToString("F3")–@s.Fg.Max.ToString("F3")</td>
+                <td>@s.Abv.Min.ToString("F1")–@s.Abv.Max.ToString("F1")%</td>
+                <td>@s.Ibu.Min.ToString("F0")–@s.Ibu.Max.ToString("F0")</td>
+                <td>@s.Srm.Min.ToString("F1")–@s.Srm.Max.ToString("F1")</td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    string filter = "";
+
+    IEnumerable<BjcpStyle> Filtered()
+    {
+        if (string.IsNullOrWhiteSpace(filter)) return Cat.Styles;
+        var f = filter.ToLowerInvariant();
+        return Cat.Styles.Where(s =>
+            s.Name.ToLowerInvariant().Contains(f) ||
+            s.Number.ToLowerInvariant().Contains(f) ||
+            s.Category.ToLowerInvariant().Contains(f));
+    }
+}

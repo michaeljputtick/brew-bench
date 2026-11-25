@@ -1,0 +1,334 @@
+@page "/editor"
+@page "/editor/{Id}"
+@inject RecipeStore Store
+@inject IngredientCatalog Catalog
+@inject StyleCatalog StyleCat
+@inject NavigationManager Nav
+
+@if (recipe is null)
+{
+    <p>Loading…</p>
+}
+else
+{
+    <div class="editor-header">
+        <input class="title-input" @bind="recipe.Name" @bind:event="oninput" />
+        <div class="header-actions">
+            <button class="btn btn-primary" @onclick="Save">💾 Save</button>
+            <button class="btn" @onclick="GoLibrary">← Library</button>
+            <button class="btn btn-primary" @onclick="GoBrewDay">Brew Day →</button>
+        </div>
+    </div>
+
+    <div class="editor-grid">
+        <!-- LEFT COLUMN: form -->
+        <div class="editor-form">
+
+            <!-- BATCH PARAMS -->
+            <section class="card">
+                <h3>Batch</h3>
+                <div class="row">
+                    <label>Batch size (gal)</label>
+                    <input type="number" step="0.1" @bind="recipe.BatchSizeGallons" @bind:event="oninput" />
+                </div>
+                <div class="row">
+                    <label>Boil (min)</label>
+                    <input type="number" step="5" @bind="recipe.BoilMinutes" @bind:event="oninput" />
+                </div>
+                <div class="row">
+                    <label>Boil-off (gal/hr)</label>
+                    <input type="number" step="0.1" @bind="recipe.BoilOffGalPerHour" @bind:event="oninput" />
+                </div>
+                <div class="row">
+                    <label>Trub loss (gal)</label>
+                    <input type="number" step="0.1" @bind="recipe.TrubLossGallons" @bind:event="oninput" />
+                </div>
+                <div class="row">
+                    <label>Mash efficiency</label>
+                    <input type="number" step="0.01" @bind="recipe.MashEfficiency" @bind:event="oninput" />
+                </div>
+                <div class="row">
+                    <label>Mash thickness (qt/lb)</label>
+                    <input type="number" step="0.05" @bind="recipe.MashThicknessQtPerLb" @bind:event="oninput" />
+                </div>
+                <div class="row">
+                    <label>Grain temp (°F)</label>
+                    <input type="number" step="1" @bind="recipe.GrainTempF" @bind:event="oninput" />
+                </div>
+                <div class="row">
+                    <label>BJCP Style</label>
+                    <select @bind="recipe.StyleId">
+                        <option value="">None</option>
+                        @foreach (var s in StyleCat.Styles)
+                        {
+                            <option value="@s.Id">@s.Number @s.Name</option>
+                        }
+                    </select>
+                </div>
+            </section>
+
+            <!-- MASH SCHEDULE -->
+            <section class="card">
+                <h3>Mash Schedule</h3>
+                @foreach (var step in recipe.MashSchedule)
+                {
+                    <div class="row mash-row">
+                        <input type="text" @bind="step.Name" @bind:event="oninput" />
+                        <input type="number" step="1" @bind="step.TempF" @bind:event="oninput" />°F
+                        <input type="number" step="5" @bind="step.Minutes" @bind:event="oninput" /> min
+                        <button class="btn btn-small btn-danger" @onclick="() => recipe.MashSchedule.Remove(step)">×</button>
+                    </div>
+                }
+                <button class="btn btn-small" @onclick="AddMashStep">+ Add Step</button>
+            </section>
+
+            <!-- GRAINS -->
+            <section class="card">
+                <h3>Grain Bill (@recipe.Grains.Sum(g => g.Pounds).ToString("F2") lb)</h3>
+                <div class="row table-header">
+                    <span>Ingredient</span><span>lb</span><span>PPG</span><span>°L</span><span>Use</span><span></span>
+                </div>
+                @foreach (var g in recipe.Grains)
+                {
+                    <div class="row grain-row">
+                        <select @bind="g.Name" @bind:after="() => ApplyGrainTemplate(g)">
+                            <option value="@g.Name">@g.Name</option>
+                            @foreach (var t in Catalog.Grains)
+                            {
+                                <option value="@t.Name">@t.Name</option>
+                            }
+                        </select>
+                        <input type="number" step="0.25" @bind="g.Pounds" @bind:event="oninput" />
+                        <input type="number" step="1" @bind="g.Ppg" @bind:event="oninput" />
+                        <input type="number" step="0.5" @bind="g.Lovibond" @bind:event="oninput" />
+                        <select @bind="g.Use">
+                            <option value="@GrainUse.Mash">Mash</option>
+                            <option value="@GrainUse.LateBoil">Late Boil</option>
+                            <option value="@GrainUse.Flameout">Flameout</option>
+                        </select>
+                        <button class="btn btn-small btn-danger" @onclick="() => recipe.Grains.Remove(g)">×</button>
+                    </div>
+                }
+                <button class="btn btn-small" @onclick="AddGrain">+ Add Grain</button>
+            </section>
+
+            <!-- HOPS -->
+            <section class="card">
+                <h3>Hop Schedule</h3>
+                <div class="row table-header">
+                    <span>Hop</span><span>oz</span><span>AA%</span><span>min</span><span>Use</span><span></span>
+                </div>
+                @foreach (var h in recipe.Hops)
+                {
+                    <div class="row hop-row">
+                        <select @bind="h.Name" @bind:after="() => ApplyHopTemplate(h)">
+                            <option value="@h.Name">@h.Name</option>
+                            @foreach (var t in Catalog.Hops)
+                            {
+                                <option value="@t.Name">@t.Name</option>
+                            }
+                        </select>
+                        <input type="number" step="0.1" @bind="h.Ounces" @bind:event="oninput" />
+                        <input type="number" step="0.1" @bind="h.AlphaAcid" @bind:event="oninput" />
+                        <input type="number" step="5" @bind="h.BoilMinutes" @bind:event="oninput" />
+                        <select @bind="h.Use">
+                            <option value="@HopUse.Boil">Boil</option>
+                            <option value="@HopUse.FirstWort">First Wort</option>
+                            <option value="@HopUse.Whirlpool">Whirlpool</option>
+                            <option value="@HopUse.DryHop">Dry Hop</option>
+                        </select>
+                        <button class="btn btn-small btn-danger" @onclick="() => recipe.Hops.Remove(h)">×</button>
+                    </div>
+                }
+                <button class="btn btn-small" @onclick="AddHop">+ Add Hop</button>
+            </section>
+
+            <!-- YEAST -->
+            <section class="card">
+                <h3>Yeast</h3>
+                @foreach (var y in recipe.Yeasts)
+                {
+                    <div class="row yeast-row">
+                        <select @bind="y.Name" @bind:after="() => ApplyYeastTemplate(y)">
+                            <option value="@y.Name">@y.Name</option>
+                            @foreach (var t in Catalog.Yeasts)
+                            {
+                                <option value="@t.Name">@t.Name (@t.Lab)</option>
+                            }
+                        </select>
+                        <span>Att: <input type="number" step="0.01" @bind="y.ApparentAttenuation" @bind:event="oninput" style="width:80px" /></span>
+                        <span>°F: <input type="number" step="1" @bind="y.IdealLowF" @bind:event="oninput" style="width:70px" />–<input type="number" step="1" @bind="y.IdealHighF" @bind:event="oninput" style="width:70px" /></span>
+                        <button class="btn btn-small btn-danger" @onclick="() => recipe.Yeasts.Remove(y)">×</button>
+                    </div>
+                }
+                <button class="btn btn-small" @onclick="AddYeast">+ Add Yeast</button>
+            </section>
+
+            <!-- NOTES -->
+            <section class="card">
+                <h3>Notes</h3>
+                <textarea rows="4" @bind="recipe.Notes" @bind:event="oninput"></textarea>
+            </section>
+        </div>
+
+        <!-- RIGHT COLUMN: calc dashboard -->
+        <aside class="editor-stats">
+            <section class="card stats-card">
+                <h3>Live Stats</h3>
+                <div class="big-stat">
+                    <label>ABV</label><span>@calc.Abv.ToString("F2")%</span>
+                </div>
+                <div class="stat-grid">
+                    <div><label>OG</label><span>@calc.Og.ToString("F4")</span></div>
+                    <div><label>FG</label><span>@calc.Fg.ToString("F4")</span></div>
+                    <div><label>IBU</label><span>@calc.Ibu.ToString("F1")</span></div>
+                    <div><label>SRM</label><span>@calc.Srm.ToString("F1")</span></div>
+                    <div><label>Calories/12oz</label><span>@calc.CaloriesPer12oz</span></div>
+                    <div><label>Apparent Att.</label><span>@((calc.AttenuationApparent*100).ToString("F1"))%</span></div>
+                </div>
+                <div class="srm-bar" style="background:@SrmColor(calc.Srm)"></div>
+            </section>
+
+            <section class="card">
+                <h3>Lock &amp; Solve</h3>
+                <p class="muted small">Pick a target; the app will scale ingredients to hit it.</p>
+                <div class="solve-row">
+                    <label>Target ABV %</label>
+                    <input type="number" step="0.1" @bind="targetAbv" />
+                    <button class="btn btn-small" @onclick="SolveAbv">Solve</button>
+                </div>
+                <div class="solve-row">
+                    <label>Target OG</label>
+                    <input type="number" step="0.001" @bind="targetOg" />
+                    <button class="btn btn-small" @onclick="SolveOg">Solve</button>
+                </div>
+                <div class="solve-row">
+                    <label>Target IBU</label>
+                    <input type="number" step="1" @bind="targetIbu" />
+                    <button class="btn btn-small" @onclick="SolveIbu">Solve</button>
+                </div>
+                <div class="solve-row">
+                    <label>Scale batch (gal)</label>
+                    <input type="number" step="0.5" @bind="targetBatch" />
+                    <button class="btn btn-small" @onclick="SolveBatch">Solve</button>
+                </div>
+            </section>
+
+            <section class="card">
+                <h3>Water &amp; Volumes</h3>
+                <div class="stat-grid">
+                    <div><label>Pre-boil vol</label><span>@calc.PreBoilVolume gal</span></div>
+                    <div><label>Pre-boil OG</label><span>@calc.PreBoilOg.ToString("F4")</span></div>
+                    <div><label>Strike water</label><span>@calc.StrikeWaterGallons gal</span></div>
+                    <div><label>Strike temp</label><span>@calc.StrikeWaterTempF.ToString("F0")°F</span></div>
+                    <div><label>Sparge water</label><span>@calc.SpargeWaterGallons gal</span></div>
+                    <div><label>Total grain</label><span>@calc.TotalGrainPounds lb</span></div>
+                </div>
+            </section>
+
+            @if (style is not null)
+            {
+                <section class="card">
+                    <h3>Style Check: @style.Name</h3>
+                    @foreach (var ck in StyleCat.Check(style, calc))
+                    {
+                        <div class="style-check @ck.Severity.ToString().ToLower()">
+                            <span class="ck-label">@ck.Label</span>
+                            <span class="ck-value">@ck.Value.ToString(ck.Format)</span>
+                            <span class="ck-range">(@ck.Min.ToString(ck.Format)–@ck.Max.ToString(ck.Format))</span>
+                        </div>
+                    }
+                </section>
+            }
+        </aside>
+    </div>
+}
+
+@code {
+    [Parameter] public string? Id { get; set; }
+    Recipe? recipe;
+    CalcResult calc = new(0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+    BjcpStyle? style;
+    double targetAbv = 5.0;
+    double targetOg = 1.050;
+    double targetIbu = 30;
+    double targetBatch = 5.5;
+
+    protected override void OnParametersSet()
+    {
+        if (!string.IsNullOrEmpty(Id))
+        {
+            recipe = Store.Get(Id);
+        }
+        recipe ??= new Recipe();
+        if (recipe.MashSchedule.Count == 0)
+            recipe.MashSchedule.Add(new MashStep());
+        Recalc();
+    }
+
+    void Recalc()
+    {
+        if (recipe is null) return;
+        calc = BrewMath.Calculate(recipe);
+        style = StyleCat.Find(recipe.StyleId);
+        targetAbv = calc.Abv > 0 ? calc.Abv : targetAbv;
+        targetOg = calc.Og > 1 ? calc.Og : targetOg;
+        targetIbu = calc.Ibu > 0 ? calc.Ibu : targetIbu;
+        targetBatch = recipe.BatchSizeGallons;
+    }
+
+    protected override bool ShouldRender() { Recalc(); return true; }
+
+    void Save()
+    {
+        if (recipe is null) return;
+        Store.Save(recipe);
+    }
+
+    void GoLibrary() => Nav.NavigateTo("");
+    void GoBrewDay() { if (recipe is not null) { Store.Save(recipe); Nav.NavigateTo($"brewday/{recipe.Id}"); } }
+
+    void AddMashStep() => recipe?.MashSchedule.Add(new MashStep { TempF = 152, Minutes = 60 });
+    void AddGrain() => recipe?.Grains.Add(new GrainAddition { Name = Catalog.Grains[0].Name, Ppg = Catalog.Grains[0].Ppg, Lovibond = Catalog.Grains[0].Lovibond, Pounds = 1.0 });
+    void AddHop() => recipe?.Hops.Add(new HopAddition { Name = Catalog.Hops[0].Name, AlphaAcid = Catalog.Hops[0].TypicalAlphaAcid, Ounces = 0.5, BoilMinutes = 60 });
+    void AddYeast() {
+        var t = Catalog.Yeasts[0];
+        recipe?.Yeasts.Add(new YeastAddition { Name = t.Name, Lab = t.Lab, ApparentAttenuation = t.Attenuation, IdealLowF = t.IdealLowF, IdealHighF = t.IdealHighF, Form = t.Form });
+    }
+
+    void ApplyGrainTemplate(GrainAddition g)
+    {
+        var t = Catalog.Grains.FirstOrDefault(x => x.Name == g.Name);
+        if (t is not null) { g.Ppg = t.Ppg; g.Lovibond = t.Lovibond; }
+    }
+
+    void ApplyHopTemplate(HopAddition h)
+    {
+        var t = Catalog.Hops.FirstOrDefault(x => x.Name == h.Name);
+        if (t is not null) { h.AlphaAcid = t.TypicalAlphaAcid; }
+    }
+
+    void ApplyYeastTemplate(YeastAddition y)
+    {
+        var t = Catalog.Yeasts.FirstOrDefault(x => x.Name == y.Name);
+        if (t is not null) { y.Lab = t.Lab; y.ApparentAttenuation = t.Attenuation; y.IdealLowF = t.IdealLowF; y.IdealHighF = t.IdealHighF; y.Form = t.Form; }
+    }
+
+    void SolveAbv() { if (recipe is null) return; recipe = BrewMath.SolveForAbv(recipe, targetAbv); }
+    void SolveOg() { if (recipe is null) return; recipe = BrewMath.SolveForOg(recipe, targetOg); }
+    void SolveIbu() { if (recipe is null) return; recipe = BrewMath.SolveForIbu(recipe, targetIbu); }
+    void SolveBatch() { if (recipe is null) return; recipe = BrewMath.SolveForBatchSize(recipe, targetBatch); }
+
+    string SrmColor(double srm)
+    {
+        // Approximate SRM to RGB
+        if (srm < 2) return "#F8F753";
+        if (srm < 4) return "#F6F513";
+        if (srm < 8) return "#EAB923";
+        if (srm < 12) return "#D7651F";
+        if (srm < 17) return "#BF3B0F";
+        if (srm < 22) return "#8D2702";
+        if (srm < 30) return "#5D1A00";
+        return "#1F0B00";
+    }
+}

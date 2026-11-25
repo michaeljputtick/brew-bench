@@ -1,0 +1,116 @@
+@page "/"
+@page "/library"
+@inject RecipeStore Store
+@inject NavigationManager Nav
+@inject StyleCatalog Styles
+@inject IJSRuntime JS
+
+<h1>Recipe Library</h1>
+<p class="muted page-sub">Recipes are saved in this browser. Export a backup to move them to another device.</p>
+
+<div class="toolbar">
+    <button class="btn btn-primary" @onclick="NewRecipe">+ New Recipe</button>
+    <button class="btn" @onclick="Export">Export</button>
+    <label class="btn file-btn">
+        Import
+        <InputFile OnChange="Import" accept=".json,application/json" multiple />
+    </label>
+    @if (message is not null)
+    {
+        <span class="toast @(messageIsError ? "error" : "")">@message</span>
+    }
+</div>
+
+<div class="recipe-grid">
+    @foreach (var r in recipes.OrderByDescending(x => x.IsPreset).ThenByDescending(x => x.UpdatedUtc))
+    {
+        var calc = BrewMath.Calculate(r);
+        var style = Styles.Find(r.StyleId);
+        <div class="recipe-card @(r.IsPreset ? "preset" : "")">
+            <div class="recipe-card-header">
+                <h3>@r.Name</h3>
+                @if (r.IsPreset) { <span class="preset-tag">PRESET</span> }
+            </div>
+            <div class="recipe-style">@(style?.Name ?? "Untitled style")</div>
+            <div class="recipe-stats">
+                <div><label>OG</label> @calc.Og.ToString("F3")</div>
+                <div><label>FG</label> @calc.Fg.ToString("F3")</div>
+                <div class="hl"><label>ABV</label> @calc.Abv.ToString("F1")%</div>
+                <div><label>IBU</label> @calc.Ibu.ToString("F0")</div>
+                <div><label>SRM</label> @calc.Srm.ToString("F1")</div>
+            </div>
+            <div class="recipe-actions">
+                <button class="btn" @onclick="() => Open(r)">Open</button>
+                <button class="btn" @onclick="() => Duplicate(r)">Duplicate</button>
+                <button class="btn" @onclick="() => BrewDay(r)">Brew →</button>
+                @if (!r.IsPreset)
+                {
+                    <button class="btn btn-danger" @onclick="() => Delete(r)">×</button>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    List<Recipe> recipes = new();
+    string? message;
+    bool messageIsError;
+
+    protected override void OnInitialized() => Reload();
+
+    async Task Export()
+    {
+        await JS.InvokeVoidAsync("brewBench.download", $"brew-bench-recipes-{DateTime.Now:yyyy-MM-dd}.json", Store.ExportJson());
+        (message, messageIsError) = ($"Exported {recipes.Count} recipes.", false);
+    }
+
+    // Takes a Brew Bench export or the desktop app's one-recipe-per-file JSON (select several at once).
+    async Task Import(InputFileChangeEventArgs e)
+    {
+        var imported = 0;
+        var failed = 0;
+        foreach (var file in e.GetMultipleFiles(200))
+        {
+            try
+            {
+                using var reader = new StreamReader(file.OpenReadStream(maxAllowedSize: 5_000_000));
+                imported += Store.ImportJson(await reader.ReadToEndAsync());
+            }
+            catch
+            {
+                failed++;
+            }
+        }
+        Reload();
+        (message, messageIsError) = failed == 0
+            ? ($"Imported {imported} recipe{(imported == 1 ? "" : "s")}.", false)
+            : ($"Imported {imported}; {failed} file{(failed == 1 ? "" : "s")} couldn't be read.", true);
+    }
+
+    void Reload() => recipes = Store.List().ToList();
+
+    void Open(Recipe r) => Nav.NavigateTo($"editor/{r.Id}");
+    void BrewDay(Recipe r) => Nav.NavigateTo($"brewday/{r.Id}");
+
+    void Duplicate(Recipe r)
+    {
+        var copy = Store.Duplicate(r);
+        Reload();
+        Nav.NavigateTo($"editor/{copy.Id}");
+    }
+
+    void Delete(Recipe r)
+    {
+        Store.Delete(r.Id);
+        Reload();
+    }
+
+    void NewRecipe()
+    {
+        var r = new Recipe { Name = "New Recipe" };
+        r.MashSchedule.Add(new MashStep());
+        Store.Save(r);
+        Nav.NavigateTo($"editor/{r.Id}");
+    }
+}

@@ -1,0 +1,85 @@
+@implements IDisposable
+@inject IJSRuntime JS
+
+<div class="timer @(running ? "running" : "")">
+    <div class="timer-display">@FormatTime(remainingSeconds)</div>
+    <div class="timer-controls">
+        <button class="btn btn-small" @onclick="StartPause">@(running ? "Pause" : "Start")</button>
+        <button class="btn btn-small" @onclick="Reset">Reset</button>
+    </div>
+    @if (remainingSeconds <= 0 && started)
+    {
+        <div class="timer-done">⏰ TIME UP</div>
+    }
+</div>
+
+@code {
+    [Parameter] public int Minutes { get; set; }
+    [Parameter] public string RunningKey { get; set; } = "";
+
+    int remainingSeconds;
+    bool running;
+    bool started;
+    System.Threading.Timer? tick;
+    string lastKey = "";
+
+    protected override void OnParametersSet()
+    {
+        if (lastKey != RunningKey)
+        {
+            lastKey = RunningKey;
+            Reset();
+        }
+    }
+
+    void Reset()
+    {
+        remainingSeconds = Minutes * 60;
+        running = false;
+        started = false;
+        StateHasChanged();
+    }
+
+    void StartPause()
+    {
+        if (running)
+        {
+            running = false;
+            tick?.Dispose();
+            tick = null;
+        }
+        else
+        {
+            running = true;
+            started = true;
+            tick = new System.Threading.Timer(OnTick, null, 1000, 1000);
+        }
+    }
+
+    void OnTick(object? state)
+    {
+        if (remainingSeconds > 0)
+            remainingSeconds--;
+        else
+        {
+            running = false;
+            tick?.Dispose();
+            tick = null;
+        }
+        InvokeAsync(StateHasChanged);
+    }
+
+    string FormatTime(int s)
+    {
+        if (s < 0) s = 0;
+        int h = s / 3600;
+        int m = (s % 3600) / 60;
+        int sec = s % 60;
+        return h > 0 ? $"{h}:{m:D2}:{sec:D2}" : $"{m:D2}:{sec:D2}";
+    }
+
+    public void Dispose()
+    {
+        tick?.Dispose();
+    }
+}

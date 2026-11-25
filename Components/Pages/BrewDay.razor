@@ -1,0 +1,122 @@
+@page "/brewday"
+@page "/brewday/{Id}"
+@inject RecipeStore Store
+@inject BrewSession Session
+@inject NavigationManager Nav
+@implements IDisposable
+
+<h1>Brew Day</h1>
+
+@if (Session.Recipe is null)
+{
+    <p>Choose a recipe to begin.</p>
+    <div class="recipe-grid">
+        @foreach (var r in Store.List().OrderBy(r => r.Name))
+        {
+            <div class="recipe-card">
+                <h3>@r.Name</h3>
+                <button class="btn btn-primary" @onclick="() => Begin(r)">Start Brew Day</button>
+            </div>
+        }
+    </div>
+}
+else
+{
+    var r = Session.Recipe;
+    var c = Session.Calc!;
+    var current = Session.Current!;
+    <div class="brewday-shell">
+        <aside class="brewday-side">
+            <h2>@r.Name</h2>
+            <div class="brewday-stats">
+                <div><label>Target OG</label><span>@c.Og.ToString("F4")</span></div>
+                <div><label>Target ABV</label><span>@c.Abv.ToString("F2")%</span></div>
+                <div><label>Batch</label><span>@r.BatchSizeGallons gal</span></div>
+                <div><label>Strike water</label><span>@c.StrikeWaterGallons gal @@ @c.StrikeWaterTempF.ToString("F0")°F</span></div>
+                <div><label>Sparge water</label><span>@c.SpargeWaterGallons gal</span></div>
+                <div><label>Pre-boil vol</label><span>@c.PreBoilVolume gal</span></div>
+                <div><label>Pre-boil OG</label><span>@c.PreBoilOg.ToString("F4")</span></div>
+            </div>
+            <hr/>
+            <h3>Readings</h3>
+            <div class="row"><label>Actual mash °F</label><input type="number" step="0.1" @bind="Session.ActualMashTemp" @bind:event="oninput" /></div>
+            <div class="row"><label>Actual pre-boil SG</label><input type="number" step="0.001" @bind="Session.ActualPreBoilGravity" @bind:event="oninput" /></div>
+            <div class="row"><label>Actual OG</label><input type="number" step="0.001" @bind="Session.ActualOg" @bind:event="oninput" /></div>
+            <hr/>
+            <h3>Notes</h3>
+            <textarea rows="5" @bind="Session.Notes" @bind:event="oninput"></textarea>
+            <hr/>
+            <button class="btn" @onclick="ExitSession">End Brew Day</button>
+        </aside>
+
+        <main class="brewday-main">
+            <div class="step-position">Step @(Session.CurrentStepIndex+1) of @Session.Steps.Count</div>
+            <div class="step-card kind-@current.Kind.ToString().ToLower()">
+                <h2>@current.Title</h2>
+                <p class="step-instruction">@current.Instruction</p>
+                @if (current.TargetTempF is not null)
+                {
+                    <div class="step-temp">Target: @current.TargetTempF.Value.ToString("F0")°F</div>
+                }
+                @if (current.RestMinutes is not null)
+                {
+                    <Timer Minutes="@current.RestMinutes.Value" RunningKey="@(Session.CurrentStepIndex.ToString())" />
+                }
+            </div>
+            <div class="step-actions">
+                <button class="btn" @onclick="Back" disabled="@(Session.CurrentStepIndex == 0)">← Back</button>
+                <button class="btn btn-primary" @onclick="Next" disabled="@(Session.CurrentStepIndex >= Session.Steps.Count - 1)">Next →</button>
+            </div>
+            <div class="step-preview">
+                <h4>Upcoming</h4>
+                <ol>
+                    @for (int i = Session.CurrentStepIndex + 1; i < Math.Min(Session.CurrentStepIndex + 6, Session.Steps.Count); i++)
+                    {
+                        var step = Session.Steps[i];
+                        <li><span class="kind-tag">@step.Kind</span> @step.Title</li>
+                    }
+                </ol>
+            </div>
+        </main>
+    </div>
+}
+
+@code {
+    [Parameter] public string? Id { get; set; }
+
+    protected override void OnInitialized()
+    {
+        Session.Changed += StateHasChanged;
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (!string.IsNullOrEmpty(Id) && Session.Recipe?.Id != Id)
+        {
+            var r = Store.Get(Id);
+            if (r is not null)
+            {
+                var c = BrewMath.Calculate(r);
+                Session.Begin(r, c);
+            }
+        }
+    }
+
+    void Begin(Recipe r)
+    {
+        var c = BrewMath.Calculate(r);
+        Session.Begin(r, c);
+    }
+
+    void Next() { Session.Advance(); Session.NotifyChanged(); }
+    void Back() { Session.GoBack(); Session.NotifyChanged(); }
+
+    void ExitSession()
+    {
+        Session.Recipe = null;
+        Session.NotifyChanged();
+        Nav.NavigateTo("");
+    }
+
+    public void Dispose() => Session.Changed -= StateHasChanged;
+}

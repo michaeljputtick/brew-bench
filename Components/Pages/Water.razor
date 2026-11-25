@@ -1,0 +1,140 @@
+@page "/water"
+@page "/water/{Id}"
+@inject RecipeStore Store
+@inject IngredientCatalog Catalog
+
+<h1>Water Chemistry</h1>
+
+@if (recipe is null)
+{
+    <p>Pick a recipe from the Library or open one to use this page.</p>
+}
+else
+{
+    <h2>@recipe.Name</h2>
+    <p class="muted">Total water for this recipe (strike + sparge): @TotalWater().ToString("F2") gal</p>
+
+    <div class="water-grid">
+        <section class="card">
+            <h3>Source Water (Your Tap / RO Source)</h3>
+            <div class="row">
+                <label>Preset</label>
+                <select @bind="srcPreset" @bind:after="ApplySource">
+                    <option value="">Custom</option>
+                    @foreach (var p in Catalog.WaterProfiles)
+                    {
+                        <option value="@p.Name">@p.Name</option>
+                    }
+                </select>
+            </div>
+            <WaterInput Profile="recipe.SourceWater" />
+        </section>
+
+        <section class="card">
+            <h3>Target Profile</h3>
+            <div class="row">
+                <label>Preset</label>
+                <select @bind="tgtPreset" @bind:after="ApplyTarget">
+                    <option value="">Custom</option>
+                    @foreach (var p in Catalog.WaterProfiles)
+                    {
+                        <option value="@p.Name">@p.Name</option>
+                    }
+                </select>
+            </div>
+            <WaterInput Profile="recipe.TargetWater" />
+        </section>
+
+        <section class="card">
+            <h3>Recommended Additions</h3>
+            @{ var result = Compute(); }
+            @if (result is null)
+            {
+                <p class="muted">Set source and target water profiles.</p>
+            }
+            else
+            {
+                <table class="salt-table">
+                    <thead><tr><th>Salt / Acid</th><th>Amount</th></tr></thead>
+                    <tbody>
+                        <tr><td>Gypsum (CaSO₄·2H₂O)</td><td>@result.GypsumGrams g</td></tr>
+                        <tr><td>Calcium Chloride (CaCl₂·2H₂O)</td><td>@result.CalciumChlorideGrams g</td></tr>
+                        <tr><td>Epsom Salt (MgSO₄·7H₂O)</td><td>@result.EpsomSaltGrams g</td></tr>
+                        <tr><td>Baking Soda (NaHCO₃)</td><td>@result.BakingSodaGrams g</td></tr>
+                        <tr><td>Table Salt (NaCl)</td><td>@result.TableSaltGrams g</td></tr>
+                        <tr><td>Lactic Acid 88% (mL)</td><td>@result.LacticAcidMl mL</td></tr>
+                    </tbody>
+                </table>
+
+                <h4>Resulting Profile</h4>
+                <div class="water-result">
+                    <div><label>Ca²⁺</label> @result.Result.Calcium ppm</div>
+                    <div><label>Mg²⁺</label> @result.Result.Magnesium ppm</div>
+                    <div><label>Na⁺</label> @result.Result.Sodium ppm</div>
+                    <div><label>SO₄²⁻</label> @result.Result.Sulfate ppm</div>
+                    <div><label>Cl⁻</label> @result.Result.Chloride ppm</div>
+                    <div><label>HCO₃⁻</label> @result.Result.Bicarbonate ppm</div>
+                </div>
+                <p class="muted small">
+                    Add salts to mash water for full impact on mash pH. Distribute across total water volume otherwise.
+                    Lactic acid suggestion is rough; verify mash pH with a meter (target 5.2-5.5).
+                </p>
+            }
+        </section>
+    </div>
+    <div class="toolbar">
+        <button class="btn btn-primary" @onclick="Save">💾 Save Water Profiles</button>
+    </div>
+}
+
+@code {
+    [Parameter] public string? Id { get; set; }
+    Recipe? recipe;
+    string srcPreset = "";
+    string tgtPreset = "";
+
+    protected override void OnParametersSet()
+    {
+        if (!string.IsNullOrEmpty(Id))
+            recipe = Store.Get(Id);
+        else
+        {
+            // Default: pick the most recently updated non-preset, or first preset
+            recipe = Store.List().OrderByDescending(r => r.UpdatedUtc).FirstOrDefault();
+        }
+        if (recipe is not null)
+        {
+            recipe.SourceWater ??= new WaterProfile { Name = "Source" };
+            recipe.TargetWater ??= new WaterProfile { Name = "Target" };
+        }
+    }
+
+    double TotalWater() => recipe is null ? 0 :
+        BrewMath.Calculate(recipe).StrikeWaterGallons + BrewMath.Calculate(recipe).SpargeWaterGallons;
+
+    SaltAdditions? Compute()
+    {
+        if (recipe?.SourceWater is null || recipe?.TargetWater is null) return null;
+        double total = TotalWater();
+        double mash = recipe is null ? 0 : BrewMath.Calculate(recipe).StrikeWaterGallons;
+        return WaterMath.Recommend(recipe.SourceWater, recipe.TargetWater, mash, total);
+    }
+
+    void ApplySource()
+    {
+        if (string.IsNullOrEmpty(srcPreset) || recipe is null) return;
+        var p = Catalog.WaterProfiles.FirstOrDefault(x => x.Name == srcPreset);
+        if (p is null) return;
+        recipe.SourceWater = new WaterProfile { Name = p.Name, Calcium = p.Ca, Magnesium = p.Mg, Sodium = p.Na, Sulfate = p.SO4, Chloride = p.Cl, Bicarbonate = p.HCO3 };
+    }
+
+    void ApplyTarget()
+    {
+        if (string.IsNullOrEmpty(tgtPreset) || recipe is null) return;
+        var p = Catalog.WaterProfiles.FirstOrDefault(x => x.Name == tgtPreset);
+        if (p is null) return;
+        recipe.TargetWater = new WaterProfile { Name = p.Name, Calcium = p.Ca, Magnesium = p.Mg, Sodium = p.Na, Sulfate = p.SO4, Chloride = p.Cl, Bicarbonate = p.HCO3 };
+    }
+
+    void Save() { if (recipe is not null) Store.Save(recipe); }
+}

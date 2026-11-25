@@ -1,0 +1,30 @@
+@inherits LayoutComponentBase
+
+<div class="app-shell">
+    <NavMenu />
+    <main class="app-main">
+        <div class="page-content">
+            <ErrorBoundary @ref="errorBoundary">
+                <ChildContent>
+                    @Body
+                </ChildContent>
+                <ErrorContent Context="ex">
+                    <div class="card error-card">
+                        <h3>Something broke on this page</h3>
+                        <div><strong>@ex.GetType().Name</strong>: @ex.Message</div>
+                        <details>
+                            <summary>Stack trace</summary>
+                            <pre>@ex.StackTrace</pre>
+                        </details>
+                        <button class="btn" @onclick="Reset">Reset</button>
+                    </div>
+                </ErrorContent>
+            </ErrorBoundary>
+        </div>
+    </main>
+</div>
+
+@code {
+    ErrorBoundary? errorBoundary;
+    void Reset() => errorBoundary?.Recover();
+}
