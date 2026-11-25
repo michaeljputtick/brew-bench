@@ -62,7 +62,7 @@ public class StyleCatalog
                 Abv = new() { Min = 2.5, Max = 3.2 }, Ibu = new() { Min = 10, Max = 20 }, Srm = new() { Min = 17, Max = 22 } },
         new() { Id = "15A", Number = "15A", Name = "Irish Red Ale", Category = "Irish",
                 Og = new() { Min = 1.036, Max = 1.046 }, Fg = new() { Min = 1.010, Max = 1.014 },
-                Abv = new() { Min = 3.8, Max = 5.0 }, Ibu = new() { Min = 18, Max = 28 }, Srm = new() { Min = 9, Max = 18 } },
+                Abv = new() { Min = 3.8, Max = 5.0 }, Ibu = new() { Min = 18, Max = 28 }, Srm = new() { Min = 9, Max = 14 } },
         new() { Id = "15B", Number = "15B", Name = "Irish Stout", Category = "Irish",
                 Og = new() { Min = 1.036, Max = 1.044 }, Fg = new() { Min = 1.007, Max = 1.011 },
                 Abv = new() { Min = 4.0, Max = 4.5 }, Ibu = new() { Min = 25, Max = 45 }, Srm = new() { Min = 25, Max = 40 } },

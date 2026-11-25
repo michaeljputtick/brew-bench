@@ -264,13 +264,21 @@ else
         if (recipe.MashSchedule.Count == 0)
             recipe.MashSchedule.Add(new MashStep());
         Recalc();
+        SyncTargets();
     }
 
+    // Runs before every render, so it must not touch the solve targets the user is typing.
     void Recalc()
     {
         if (recipe is null) return;
         calc = BrewMath.Calculate(recipe);
         style = StyleCat.Find(recipe.StyleId);
+    }
+
+    // Prefill the solve boxes with the recipe's current numbers (on open and after a solve).
+    void SyncTargets()
+    {
+        if (recipe is null) return;
         targetAbv = calc.Abv > 0 ? calc.Abv : targetAbv;
         targetOg = calc.Og > 1 ? calc.Og : targetOg;
         targetIbu = calc.Ibu > 0 ? calc.Ibu : targetIbu;
@@ -314,10 +322,18 @@ else
         if (t is not null) { y.Lab = t.Lab; y.ApparentAttenuation = t.Attenuation; y.IdealLowF = t.IdealLowF; y.IdealHighF = t.IdealHighF; y.Form = t.Form; }
     }
 
-    void SolveAbv() { if (recipe is null) return; recipe = BrewMath.SolveForAbv(recipe, targetAbv); }
-    void SolveOg() { if (recipe is null) return; recipe = BrewMath.SolveForOg(recipe, targetOg); }
-    void SolveIbu() { if (recipe is null) return; recipe = BrewMath.SolveForIbu(recipe, targetIbu); }
-    void SolveBatch() { if (recipe is null) return; recipe = BrewMath.SolveForBatchSize(recipe, targetBatch); }
+    void SolveAbv() => Apply(r => BrewMath.SolveForAbv(r, targetAbv));
+    void SolveOg() => Apply(r => BrewMath.SolveForOg(r, targetOg));
+    void SolveIbu() => Apply(r => BrewMath.SolveForIbu(r, targetIbu));
+    void SolveBatch() => Apply(r => BrewMath.SolveForBatchSize(r, targetBatch));
+
+    void Apply(Func<Recipe, Recipe> solve)
+    {
+        if (recipe is null) return;
+        recipe = solve(recipe);
+        Recalc();
+        SyncTargets();
+    }
 
     string SrmColor(double srm)
     {

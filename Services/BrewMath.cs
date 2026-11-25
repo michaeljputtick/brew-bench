@@ -35,20 +35,28 @@ public static class BrewMath
         double mashGrainGu = 0;
         double lateAddGu = 0;
         double totalGrainLbs = 0;
+        double mashGrainLbs = 0;
         foreach (var g in r.Grains)
         {
             double gu = g.Pounds * g.Ppg;
             totalGrainLbs += g.Pounds;
             if (g.Use == GrainUse.Mash)
+            {
                 mashGrainGu += gu;
+                mashGrainLbs += g.Pounds;
+            }
             else
                 lateAddGu += gu;
         }
-        double ogPoints = (mashGrainGu * r.MashEfficiency + lateAddGu) / r.BatchSizeGallons;
+        // Total gravity points delivered to the kettle. Gravity is that divided by the wort volume
+        // at that moment: post-boil volume for OG (the fermenter gets the same wort minus trub).
+        double kettlePoints = mashGrainGu * r.MashEfficiency + lateAddGu;
+        double ogPoints = postBoil > 0 ? kettlePoints / postBoil : 0;
         double og = 1.0 + ogPoints / 1000.0;
 
+        // Pre-boil reading is taken before late-boil and flameout additions go in.
         double preBoilOg = preBoil > 0
-            ? 1.0 + ((mashGrainGu * r.MashEfficiency + lateAddGu) / preBoil) / 1000.0
+            ? 1.0 + (mashGrainGu * r.MashEfficiency / preBoil) / 1000.0
             : og;
 
         // 3. Attenuation -> FG
@@ -63,8 +71,10 @@ public static class BrewMath
             : 152.0;
 
         double mashTempAdjustment = (152.0 - mashTempEffectivelyF) * 0.005; // 0.5% per degree
-        double sugarFraction = mashGrainGu > 0 ? lateAddGu / (mashGrainGu + lateAddGu) : 0;
-        double sugarBoost = sugarFraction * 0.10; // sugar bumps effective attenuation up to 10%
+        // Late sugars are close to fully fermentable, so their share of the extract
+        // ferments out completely instead of at the yeast's wort attenuation.
+        double sugarFraction = kettlePoints > 0 ? lateAddGu / kettlePoints : 0;
+        double sugarBoost = sugarFraction * (1.0 - avgYeastAtt);
 
         double effectiveAttenuation = Math.Clamp(avgYeastAtt + mashTempAdjustment + sugarBoost, 0.55, 0.95);
 
@@ -87,28 +97,26 @@ public static class BrewMath
             double timeFactor = (1.0 - Math.Exp(-0.04 * t)) / 4.15;
             double util = bignessFactor * timeFactor;
             double aau = h.Ounces * h.AlphaAcid;
-            ibu += aau * util * 74.89 / r.BatchSizeGallons;
+            // Concentration in the post-boil wort, which is what ends up in the glass.
+            ibu += postBoil > 0 ? aau * util * 74.89 / postBoil : 0;
         }
 
         // 5. SRM - Morey's equation
-        // MCU = (lb * Lovibond) / batch_gal
-        double mcu = r.Grains.Sum(g => g.Pounds * g.Lovibond) / r.BatchSizeGallons;
+        // MCU = (lb * Lovibond) / gallons of post-boil wort
+        double mcu = postBoil > 0 ? r.Grains.Sum(g => g.Pounds * g.Lovibond) / postBoil : 0;
         double srm = 1.4922 * Math.Pow(mcu, 0.6859);
 
-        // 6. Water
-        double strikeWater = totalGrainLbs * r.MashThicknessQtPerLb / 4.0; // gallons
+        // 6. Water (mash grains only; late sugars never see the mash)
+        double strikeWater = mashGrainLbs * r.MashThicknessQtPerLb / 4.0; // gallons
         double strikeTempF = StrikeTemperature(r.GrainTempF, MashTargetF(r), r.MashThicknessQtPerLb);
         // sparge to reach pre-boil; absorption ~0.125 gal/lb of grain
-        double grainAbsorption = totalGrainLbs * 0.125;
+        double grainAbsorption = mashGrainLbs * 0.125;
         double sparge = Math.Max(0, preBoil - (strikeWater - grainAbsorption));
 
-        // 7. Calories per 12oz
-        // Simple Brewer's Friend formula: ((6.9*ABV + 4.0*(re-0.1*ABV)) * fg * 3.55)
-        // where re = real extract
-        double oe = ExtractFromSg(og);
-        double re = (0.1808 * oe) + (0.8192 * ExtractFromSg(fg));
-        double caloriesPer100ml = ((6.9 * abv) + 4.0 * (re - 0.1 * abv)) * fg;
-        int caloriesPer12oz = (int)Math.Round(caloriesPer100ml * 3.55);
+        // 7. Calories per 12 oz (Brewer's Friend / ASBC-derived formulas)
+        double calAlcohol = 1881.22 * fg * (og - fg) / (1.775 - og);
+        double calCarbs = 3550.0 * fg * ((0.1808 * og) + (0.8192 * fg) - 1.0004);
+        int caloriesPer12oz = (int)Math.Round(Math.Max(0, calAlcohol) + Math.Max(0, calCarbs));
 
         return new CalcResult(
             Og: Math.Round(og, 4),
@@ -127,8 +135,9 @@ public static class BrewMath
             AttenuationApparent: Math.Round(effectiveAttenuation, 3));
     }
 
+    // Strike water has to hit the first rest (dough-in); later steps are reached by heating or infusion.
     private static double MashTargetF(Recipe r) =>
-        r.MashSchedule.Count > 0 ? r.MashSchedule.Last().TempF : 152.0;
+        r.MashSchedule.Count > 0 ? r.MashSchedule.First().TempF : 152.0;
 
     /// <summary>
     /// Strike water temperature using Palmer's formula.
@@ -139,12 +148,6 @@ public static class BrewMath
     {
         double r = thicknessQtPerLb;
         return (0.2 / r) * (targetMashF - grainTempF) + targetMashF;
-    }
-
-    /// <summary>Plato extract from specific gravity.</summary>
-    private static double ExtractFromSg(double sg)
-    {
-        return -616.868 + 1111.14 * sg - 630.272 * sg * sg + 135.997 * sg * sg * sg;
     }
 
     /// <summary>
@@ -195,7 +198,8 @@ public static class BrewMath
     public static Recipe SolveForBatchSize(Recipe r, double newGallons)
     {
         if (r.BatchSizeGallons <= 0) return r;
-        double scale = newGallons / r.BatchSizeGallons;
+        // Scale by post-boil volume: trub loss is fixed, so scaling by batch size alone would drift OG, IBU, and color.
+        double scale = (newGallons + r.TrubLossGallons) / (r.BatchSizeGallons + r.TrubLossGallons);
         var copy = r.Clone();
         copy.Id = r.Id;
         copy.IsPreset = r.IsPreset;

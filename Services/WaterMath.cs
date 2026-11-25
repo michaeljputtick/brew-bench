@@ -98,12 +98,16 @@ public static class WaterMath
         {
             double caShortfall = target.Calcium - totalCa;
             gypsum += caShortfall / 61.5 * V;
+            caFromGypsum = gypsum / V * 61.5;
         }
 
-        // Lactic acid 88% strength: ~5.7 mEq/mL.
-        // 1 mL drops alkalinity by ~80 ppm in 1 gallon. For mash pH adjustment.
-        // Recommended for excess bicarbonate above ~50 ppm
-        double lacticMl = excessHCO3 > 0 ? Math.Round(excessHCO3 * V / 80.0, 1) : 0;
+        // Lactic acid 88%: about 11.8 mEq/mL, roughly 97% dissociated at mash pH, so ~11.5 mEq/mL usable.
+        // Each mEq/L of bicarbonate to remove is 61 ppm HCO3. Neutralizes the excess across the total water.
+        const double LitersPerGallon = 3.785;
+        const double LacticMeqPerMl = 11.5;
+        double lacticMl = excessHCO3 > 0
+            ? Math.Round(excessHCO3 / 61.02 * V * LitersPerGallon / LacticMeqPerMl, 1)
+            : 0;
 
         // Build resulting profile
         var result = new WaterProfile
